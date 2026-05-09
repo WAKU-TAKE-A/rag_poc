@@ -2,5 +2,6 @@
   "log_max_bytes": 1048576,
   "log_backup_count": 10,
   "do_ocr": false,
-  "pdf_split_pages": 20
+  "pdf_split_pages": 20,
+  "chunk_level": 2
 }
