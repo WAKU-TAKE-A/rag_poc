@@ -11,6 +11,18 @@ from src.answerer import generate_answer
 from src.logger import logger
 from src.state import StateTracker, calculate_file_hash, calculate_dict_hash
 
+def positive_int(value):
+    int_value = int(value)
+    if int_value <= 0:
+        raise argparse.ArgumentTypeError("Value must be a positive integer.")
+    return int_value
+
+def heading_level(value):
+    int_value = positive_int(value)
+    if int_value > 6:
+        raise argparse.ArgumentTypeError("Heading level must be between 1 and 6.")
+    return int_value
+
 def parse_cmd(args):
     if os.path.isdir(args.file):
         patterns = ["*.pdf", "*.pptx", "*.md", "*.adoc"]
@@ -66,6 +78,8 @@ def chunk_cmd(args):
             logger.error(f"Error chunking {args.file}: {e}")
 
 def embed_cmd(args):
+    files_embedded = False
+
     if os.path.isdir(args.file):
         files = glob.glob(os.path.join(args.file, "*.json"))
         if not files:
@@ -75,14 +89,20 @@ def embed_cmd(args):
         logger.info(f"Found {len(files)} JSON files to embed in directory: {args.file}")
         for f in files:
             try:
-                embed_chunks(f)
+                if embed_chunks(f):
+                    files_embedded = True
             except Exception as e:
                 logger.error(f"Error embedding {f}: {e}")
     else:
         try:
-            embed_chunks(args.file)
+            if embed_chunks(args.file):
+                files_embedded = True
         except Exception as e:
             logger.error(f"Error embedding {args.file}: {e}")
+
+    if files_embedded:
+        logger.info("Rebuilding search index after embedding updates...")
+        index_all_chunks()
 
 def sync_cmd(args):
     tracker = StateTracker()
@@ -156,14 +176,15 @@ def sync_cmd(args):
 
             chunk_path = chunk_markdown(parsed_path, chunk_level=chunk_level)
 
+            embedded = False
             if chunk_path:
-                embed_chunks(chunk_path)
+                embedded = embed_chunks(chunk_path)
 
             tracker.update_file_record(input_file, {
                 "hash": current_hash,
                 "parsed_file": parsed_path,
                 "chunk_file": chunk_path,
-                "status": "embedded"
+                "status": "embedded" if embedded else "chunked"
             })
         except Exception as e:
             logger.error(f"Error processing {input_file}: {e}")
@@ -293,21 +314,21 @@ def main():
 
     # config cmd
     config_parser = subparsers.add_parser("config", help="Get/Set configuration")
-    config_parser.add_argument("--max-size", type=int, help="Max log file size in bytes")
-    config_parser.add_argument("--backup-count", type=int, help="Backup file count")
+    config_parser.add_argument("--max-size", type=positive_int, help="Max log file size in bytes")
+    config_parser.add_argument("--backup-count", type=positive_int, help="Backup file count")
     config_parser.add_argument("--ocr", choices=['true', 'false'], help="Enable/Disable OCR (true/false)")
-    config_parser.add_argument("--split-pages", type=int, help="Pages per split PDF file")
-    config_parser.add_argument("--chunk-level", type=int, help="Heading level to chunk at")
+    config_parser.add_argument("--split-pages", type=positive_int, help="Pages per split PDF file")
+    config_parser.add_argument("--chunk-level", type=heading_level, help="Heading level to chunk at")
     config_parser.add_argument("--llm-model", help="OpenAI model for answer generation")
     config_parser.add_argument("--llm-temperature", type=float, help="Temperature for answer generation")
     config_parser.add_argument("--llm-system-prompt", help="System prompt for answer generation")
     config_parser.add_argument("--llm-user-prompt", help="User prompt template for answer generation")
-    config_parser.add_argument("--search-limit", type=int, help="Number of chunks to retrieve for search")
+    config_parser.add_argument("--search-limit", type=positive_int, help="Number of chunks to retrieve for search")
 
     # split cmd
     split_parser = subparsers.add_parser("split", help="Split PDF into smaller files")
     split_parser.add_argument("file", help="Path to PDF file")
-    split_parser.add_argument("--pages", type=int, help="Pages per split file (overrides config)")
+    split_parser.add_argument("--pages", type=positive_int, help="Pages per split file (overrides config)")
 
     # ask cmd
     ask_parser = subparsers.add_parser("ask", help="Search and generate answer using LLM (RAG)")

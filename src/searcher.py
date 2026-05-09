@@ -1,6 +1,7 @@
 import os
 import json
 import glob
+import shutil
 import uuid
 from whoosh.index import create_in, open_dir
 from whoosh.fields import Schema, TEXT, ID
@@ -24,12 +25,11 @@ def index_all_chunks():
     
     # 1. Setup Whoosh
     schema = Schema(chunk_id=ID(stored=True), text=TEXT(stored=True))
-    if not os.path.exists("whoosh_index"):
-        os.makedirs("whoosh_index")
-        ix = create_in("whoosh_index", schema)
-    else:
-        ix = open_dir("whoosh_index")
-        
+    if os.path.exists("whoosh_index"):
+        shutil.rmtree("whoosh_index")
+    os.makedirs("whoosh_index", exist_ok=True)
+    ix = create_in("whoosh_index", schema)
+
     writer = ix.writer()
     
     # 2. Setup Qdrant
@@ -80,6 +80,24 @@ def index_all_chunks():
         
     logger.info(f"Indexed chunks into Whoosh and Qdrant.")
 
+def _qdrant_collection_exists(collection_name: str) -> bool:
+    try:
+        q_client = get_qdrant_client()
+        q_client.get_collection(collection_name)
+        return True
+    except Exception:
+        return False
+
+def ensure_indexes_ready():
+    if not os.path.exists("whoosh_index") or not os.listdir("whoosh_index"):
+        logger.info("Search index is missing. Rebuilding from chunks...")
+        index_all_chunks()
+        return
+
+    if not _qdrant_collection_exists("chunks"):
+        logger.info("Qdrant collection is missing. Rebuilding from chunks...")
+        index_all_chunks()
+
 def search(query_str: str):
     logger.info(f"Searching for: '{query_str}'")
     
@@ -96,8 +114,8 @@ def search(query_str: str):
             
     logger.info(f"Search limit set to: {search_limit}")
     
-    # Ensure index is fresh
-    index_all_chunks()
+    # Ensure index artifacts exist.
+    ensure_indexes_ready()
     
     # Initialize Janome for query
     t = Tokenizer()
@@ -139,8 +157,13 @@ def search(query_str: str):
             logger.warning(f"Vector search failed (maybe quota or API error): {e}")
             logger.warning("Falling back to keyword search only.")
         
-    # 3. Merge (Hybrid) - Simple deduplication
-    merged_hits = list(set(bm25_hits + embedding_hits))
+    # 3. Merge (Hybrid) - Keep the original ranking order.
+    merged_hits = []
+    for hit_id in bm25_hits + embedding_hits:
+        if hit_id not in merged_hits:
+            merged_hits.append(hit_id)
+        if len(merged_hits) >= search_limit:
+            break
     
     # Save debug info
     debug_info = {

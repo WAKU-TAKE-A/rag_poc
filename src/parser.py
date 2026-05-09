@@ -16,7 +16,7 @@ def convert_to_markdown(input_path: str, output_dir: str = "parsed") -> str:
     config_path = "config.json"
     if os.path.exists(config_path):
         try:
-            with open(config_path, "r") as f:
+            with open(config_path, "r", encoding="utf-8") as f:
                 config = json.load(f)
                 do_ocr = config.get("do_ocr", False)
         except Exception:
@@ -45,6 +45,9 @@ def convert_to_markdown(input_path: str, output_dir: str = "parsed") -> str:
     return output_path
 
 def split_pdf(input_path: str, pages_per_file: int = 20, output_dir: str = "input") -> list[str]:
+    if pages_per_file <= 0:
+        raise ValueError("pages_per_file must be greater than 0.")
+
     logger.info(f"Splitting {input_path} every {pages_per_file} pages...")
     
     reader = PdfReader(input_path)

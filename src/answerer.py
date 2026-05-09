@@ -4,6 +4,35 @@ import glob
 from openai import OpenAI
 from src.logger import logger
 
+def _load_context_texts(hit_ids: list[str]) -> list[str]:
+    remaining_ids = set(hit_ids)
+    chunk_texts = {}
+
+    for file_path in glob.glob("chunks/*.json"):
+        if not remaining_ids:
+            break
+
+        with open(file_path, "r", encoding="utf-8") as f:
+            try:
+                chunks = json.load(f)
+                for chunk in chunks:
+                    chunk_id = chunk["chunk_id"]
+                    if chunk_id in remaining_ids:
+                        chunk_texts[chunk_id] = chunk["text"]
+                        remaining_ids.remove(chunk_id)
+            except Exception as e:
+                logger.error(f"Error loading chunk file {file_path}: {e}")
+
+    context_texts = []
+    for hit_id in hit_ids:
+        text = chunk_texts.get(hit_id)
+        if text is None:
+            logger.warning(f"Chunk ID {hit_id} not found in loaded chunks.")
+            continue
+        context_texts.append(text)
+
+    return context_texts
+
 def generate_answer(query: str, hit_ids: list[str]) -> str:
     logger.info(f"Generating answer for query: '{query}' using {len(hit_ids)} hits.")
     
@@ -25,26 +54,9 @@ def generate_answer(query: str, hit_ids: list[str]) -> str:
         except Exception as e:
             logger.error(f"Error loading config for LLM settings: {e}")
 
-    # 2. Load chunks to get text
-    id_to_text = {}
-    chunk_files = glob.glob("chunks/*.json")
-    for file_path in chunk_files:
-        with open(file_path, "r", encoding="utf-8") as f:
-            try:
-                chunks = json.load(f)
-                for chunk in chunks:
-                    id_to_text[chunk["chunk_id"]] = chunk["text"]
-            except Exception as e:
-                logger.error(f"Error loading chunk file {file_path}: {e}")
-                
-    # 3. Extract context
-    context_texts = []
-    for hit_id in hit_ids:
-        if hit_id in id_to_text:
-            context_texts.append(id_to_text[hit_id])
-        else:
-            logger.warning(f"Chunk ID {hit_id} not found in loaded chunks.")
-            
+    # 2. Extract context
+    context_texts = _load_context_texts(hit_ids)
+
     if not context_texts:
         logger.warning("No context text found for the hits.")
         return "該当する情報が見つからなかったため、回答を生成できませんでした。"

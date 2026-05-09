@@ -6,13 +6,13 @@ from src.logger import logger
 
 load_dotenv()
 
-def embed_chunks(chunks_path: str):
+def embed_chunks(chunks_path: str) -> bool:
     logger.info(f"Embedding chunks in {chunks_path}...")
     
     if not os.environ.get("OPENAI_API_KEY"):
         logger.error("OPENAI_API_KEY environment variable not set.")
         logger.info("Please set it in a .env file or your environment.")
-        return
+        return False
         
     client = OpenAI()
     
@@ -31,9 +31,10 @@ def embed_chunks(chunks_path: str):
             chunk["embedding"] = response.data[0].embedding
         except Exception as e:
             logger.error(f"Error embedding chunk {i+1}: {e}")
-            return
+            return False
         
     with open(chunks_path, "w", encoding="utf-8") as f:
         json.dump(chunks, f, ensure_ascii=False, indent=2)
         
     logger.info(f"Successfully added embeddings to {len(chunks)} chunks in {chunks_path}")
+    return True
