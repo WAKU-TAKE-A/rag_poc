@@ -3,5 +3,9 @@
   "log_backup_count": 10,
   "do_ocr": false,
   "pdf_split_pages": 20,
-  "chunk_level": 2
+  "chunk_level": 2,
+  "llm_model": "gpt-4o-mini",
+  "llm_temperature": 0.3,
+  "llm_system_prompt": "あなたは提供されたコンテキストに忠実に答える優秀なAIアシスタントです。",
+  "llm_user_prompt_template": "以下の【コンテキスト】を元に、ユーザーの【質問】に日本語で回答してください。コンテキストに直接的な答えがない場合でも、具体例や文脈から推測できる場合は、その旨を断った上で可能性のある回答を提示してください。\n\n【コンテキスト】\n{context}\n\n【質問】\n{query}\n\n【回答】"
 }

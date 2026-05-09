@@ -1,5 +1,11 @@
 # 更新履歴
 
+## 2026-05-09 (LLM設定の外部化と柔軟化)
+- **LLM挙動のカスタマイズ機能**:
+  - `config.json` に `llm_model`, `llm_temperature`, `llm_system_prompt`, `llm_user_prompt_template` を追加。
+  - `src/answerer.py` を修正し、ハードコードされていたプロンプトや温度（デフォルト `0.0`）を設定ファイルから読み込むように変更。
+  - デフォルトの温度を `0.3` に引き上げ、プロンプトも「文脈から推測できる場合は推測して回答してよい」という柔らかめの表現に変更。
+  - `main.py` の `config` コマンドを拡張し、これらのLLM設定をコマンドラインから変更可能にした。
 ## 2026-05-09 (差分更新の実装)
 - **差分更新（Incremental Processing）機能の追加**:
   - `src/state.py` を新規作成し、ファイルのハッシュ値（MD5）を利用した状態管理（`sync_state.json`）を実装。

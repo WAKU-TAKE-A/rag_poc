@@ -35,12 +35,11 @@ def parse_cmd(args):
             logger.error(f"Error parsing {args.file}: {e}")
 
 def chunk_cmd(args):
-    # Retrieve config for default chunk_level
     chunk_level = 2
     config_path = "config.json"
     if os.path.exists(config_path):
         try:
-            with open(config_path, "r") as f:
+            with open(config_path, "r", encoding="utf-8") as f:
                 config = json.load(f)
                 chunk_level = config.get("chunk_level", 2)
         except Exception:
@@ -111,7 +110,6 @@ def sync_cmd(args):
     current_input_files = []
     for p in patterns:
         current_input_files.extend(glob.glob(os.path.join(input_dir, p)))
-    # Normalize paths
     current_input_files = [os.path.normpath(f) for f in current_input_files]
 
     # 2. Handle Deletions
@@ -141,7 +139,6 @@ def sync_cmd(args):
         parsed_file = record.get("parsed_file")
         chunk_file = record.get("chunk_file")
         
-        # Check if hash matches AND output files exist
         is_unchanged = (record.get("hash") == current_hash)
         outputs_exist = (parsed_file and os.path.exists(parsed_file)) and \
                         (chunk_file and os.path.exists(chunk_file))
@@ -153,19 +150,15 @@ def sync_cmd(args):
         logger.info(f"Processing new or modified file: {input_file}")
         files_processed = True
         try:
-            # Parse
             parsed_path = convert_to_markdown(input_file)
             if not parsed_path:
                 continue
 
-            # Chunk
             chunk_path = chunk_markdown(parsed_path, chunk_level=chunk_level)
 
-            # Embed
             if chunk_path:
                 embed_chunks(chunk_path)
 
-            # Update State
             tracker.update_file_record(input_file, {
                 "hash": current_hash,
                 "parsed_file": parsed_path,
@@ -213,10 +206,22 @@ def config_cmd(args):
     if args.chunk_level is not None:
         config["chunk_level"] = args.chunk_level
         updated = True
+    if args.llm_model is not None:
+        config["llm_model"] = args.llm_model
+        updated = True
+    if args.llm_temperature is not None:
+        config["llm_temperature"] = args.llm_temperature
+        updated = True
+    if args.llm_system_prompt is not None:
+        config["llm_system_prompt"] = args.llm_system_prompt
+        updated = True
+    if args.llm_user_prompt is not None:
+        config["llm_user_prompt_template"] = args.llm_user_prompt
+        updated = True
         
     if updated:
         with open(config_path, "w", encoding="utf-8") as f:
-            json.dump(config, f, indent=2)
+            json.dump(config, f, indent=2, ensure_ascii=False)
         logger.info(f"Updated config: {config}")
         logger.info("Changes will take effect on the next run.")
     else:
@@ -264,7 +269,7 @@ def main():
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # sync cmd
-    sync_parser = subparsers.add_parser("sync", help="Automatically process new/modified/deleted files in input/")
+    subparsers.add_parser("sync", help="Automatically process new/modified/deleted files in input/")
 
     # parse cmd
     parse_parser = subparsers.add_parser("parse", help="Convert PDF/PPTX to Markdown (Supports file or directory)")
@@ -290,6 +295,10 @@ def main():
     config_parser.add_argument("--ocr", choices=['true', 'false'], help="Enable/Disable OCR (true/false)")
     config_parser.add_argument("--split-pages", type=int, help="Pages per split PDF file")
     config_parser.add_argument("--chunk-level", type=int, help="Heading level to chunk at")
+    config_parser.add_argument("--llm-model", help="OpenAI model for answer generation")
+    config_parser.add_argument("--llm-temperature", type=float, help="Temperature for answer generation")
+    config_parser.add_argument("--llm-system-prompt", help="System prompt for answer generation")
+    config_parser.add_argument("--llm-user-prompt", help="User prompt template for answer generation")
 
     # split cmd
     split_parser = subparsers.add_parser("split", help="Split PDF into smaller files")
