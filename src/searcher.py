@@ -55,14 +55,11 @@ def index_all_chunks():
         with open(file_path, "r", encoding="utf-8") as f:
             chunks = json.load(f)
             for chunk in chunks:
-                # Tokenize Japanese text for Whoosh
                 text = chunk["text"]
                 tokenized_text = " ".join([token.surface for token in t.tokenize(text)])
                 
-                # Add to Whoosh
                 writer.add_document(chunk_id=chunk["chunk_id"], text=tokenized_text)
                 
-                # Add to Qdrant if embedding exists
                 if "embedding" in chunk:
                     point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, chunk["chunk_id"]))
                     payload = {k: v for k, v in chunk.items() if k != "embedding"}
@@ -86,6 +83,19 @@ def index_all_chunks():
 def search(query_str: str):
     logger.info(f"Searching for: '{query_str}'")
     
+    # Load config for search limit
+    search_limit = 5
+    config_path = "config.json"
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
+                search_limit = config.get("search_limit", search_limit)
+        except Exception as e:
+            logger.error(f"Error loading config for search limit: {e}")
+            
+    logger.info(f"Search limit set to: {search_limit}")
+    
     # Ensure index is fresh
     index_all_chunks()
     
@@ -99,7 +109,7 @@ def search(query_str: str):
     bm25_hits = []
     with ix.searcher() as searcher:
         query = QueryParser("text", ix.schema).parse(tokenized_query)
-        results = searcher.search(query, limit=5)
+        results = searcher.search(query, limit=search_limit)
         for r in results:
             bm25_hits.append(r["chunk_id"])
             
@@ -117,11 +127,10 @@ def search(query_str: str):
             query_vector = response.data[0].embedding
             
             q_client = get_qdrant_client()
-            # Use query_points instead of search for newer qdrant-client versions
             q_results = q_client.query_points(
                 collection_name="chunks",
                 query=query_vector,
-                limit=5
+                limit=search_limit
             ).points
             
             for r in q_results:

@@ -1,5 +1,10 @@
 # 更新履歴
 
+## 2026-05-09 (検索取得件数の外部設定化)
+- **検索取得件数（Top-K）のカスタマイズ機能**:
+  - `config.json` に `search_limit` を追加（デフォルト値を5から7に変更して検証）。
+  - `src/searcher.py` を修正し、WhooshおよびQdrantでの検索取得件数を設定ファイルから読み込むように変更。
+  - `main.py` の `config` コマンドを拡張し、`--search-limit` で件数を変更可能にした。
 ## 2026-05-09 (LLM設定の外部化と柔軟化)
 - **LLM挙動のカスタマイズ機能**:
   - `config.json` に `llm_model`, `llm_temperature`, `llm_system_prompt`, `llm_user_prompt_template` を追加。

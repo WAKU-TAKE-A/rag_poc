@@ -218,6 +218,9 @@ def config_cmd(args):
     if args.llm_user_prompt is not None:
         config["llm_user_prompt_template"] = args.llm_user_prompt
         updated = True
+    if args.search_limit is not None:
+        config["search_limit"] = args.search_limit
+        updated = True
         
     if updated:
         with open(config_path, "w", encoding="utf-8") as f:
@@ -299,6 +302,7 @@ def main():
     config_parser.add_argument("--llm-temperature", type=float, help="Temperature for answer generation")
     config_parser.add_argument("--llm-system-prompt", help="System prompt for answer generation")
     config_parser.add_argument("--llm-user-prompt", help="User prompt template for answer generation")
+    config_parser.add_argument("--search-limit", type=int, help="Number of chunks to retrieve for search")
 
     # split cmd
     split_parser = subparsers.add_parser("split", help="Split PDF into smaller files")
