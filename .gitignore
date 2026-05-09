@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Environment
+.env
+
+# DBs & Indexes
+whoosh_index/
+qdrant_data/
+
+# Generated Artifacts (PoC intermediate files)
+parsed/*
+chunks/*
+retrieval_debug/*
+
+# Keep directories but ignore content
+!input/.gitkeep
+!parsed/.gitkeep
+!chunks/.gitkeep
+!retrieval_debug/.gitkeep

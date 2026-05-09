@@ -1,0 +1,153 @@
+import os
+import json
+import glob
+import uuid
+from whoosh.index import create_in, open_dir
+from whoosh.fields import Schema, TEXT, ID
+from whoosh.qparser import QueryParser
+from qdrant_client import QdrantClient
+from qdrant_client.models import Distance, VectorParams, PointStruct
+from openai import OpenAI
+from dotenv import load_dotenv
+from janome.tokenizer import Tokenizer
+
+load_dotenv()
+
+def get_qdrant_client():
+    return QdrantClient(path="./qdrant_data")
+
+def index_all_chunks():
+    print("Indexing all chunks for search...")
+    
+    # Initialize Janome
+    t = Tokenizer()
+    
+    # 1. Setup Whoosh
+    schema = Schema(chunk_id=ID(stored=True), text=TEXT(stored=True))
+    if not os.path.exists("whoosh_index"):
+        os.makedirs("whoosh_index")
+        ix = create_in("whoosh_index", schema)
+    else:
+        ix = open_dir("whoosh_index")
+        
+    writer = ix.writer()
+    
+    # 2. Setup Qdrant
+    q_client = get_qdrant_client()
+    collection_name = "chunks"
+    
+    # Recreate collection for PoC simplicity
+    try:
+        q_client.delete_collection(collection_name)
+    except Exception:
+        pass
+        
+    q_client.create_collection(
+        collection_name=collection_name,
+        vectors_config=VectorParams(size=1536, distance=Distance.COSINE),
+    )
+    
+    points = []
+    
+    # Read all chunks
+    chunk_files = glob.glob("chunks/*.json")
+    for file_path in chunk_files:
+        with open(file_path, "r", encoding="utf-8") as f:
+            chunks = json.load(f)
+            for chunk in chunks:
+                # Tokenize Japanese text for Whoosh
+                text = chunk["text"]
+                tokenized_text = " ".join([token.surface for token in t.tokenize(text)])
+                
+                # Add to Whoosh
+                writer.add_document(chunk_id=chunk["chunk_id"], text=tokenized_text)
+                
+                # Add to Qdrant if embedding exists
+                if "embedding" in chunk:
+                    point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, chunk["chunk_id"]))
+                    payload = {k: v for k, v in chunk.items() if k != "embedding"}
+                    
+                    points.append(PointStruct(
+                        id=point_id,
+                        vector=chunk["embedding"],
+                        payload=payload
+                    ))
+                    
+    writer.commit()
+    
+    if points:
+        q_client.upsert(
+            collection_name=collection_name,
+            points=points
+        )
+        
+    print(f"Indexed chunks into Whoosh and Qdrant.")
+
+def search(query_str: str):
+    print(f"Searching for: '{query_str}'")
+    
+    # Ensure index is fresh
+    index_all_chunks()
+    
+    # Initialize Janome for query
+    t = Tokenizer()
+    tokenized_query = " ".join([token.surface for token in t.tokenize(query_str)])
+    print(f"Tokenized query for BM25: '{tokenized_query}'")
+    
+    # 1. BM25 Search (Whoosh)
+    ix = open_dir("whoosh_index")
+    bm25_hits = []
+    with ix.searcher() as searcher:
+        query = QueryParser("text", ix.schema).parse(tokenized_query)
+        results = searcher.search(query, limit=5)
+        for r in results:
+            bm25_hits.append(r["chunk_id"])
+            
+    # 2. Embedding Search (Qdrant)
+    if not os.environ.get("OPENAI_API_KEY"):
+        print("Warning: OPENAI_API_KEY not set. Skipping vector search.")
+        embedding_hits = []
+    else:
+        client = OpenAI()
+        response = client.embeddings.create(
+            input=query_str,
+            model="text-embedding-3-small"
+        )
+        query_vector = response.data[0].embedding
+        
+        q_client = get_qdrant_client()
+        q_results = q_client.search(
+            collection_name="chunks",
+            query_vector=query_vector,
+            limit=5
+        )
+        
+        embedding_hits = []
+        for r in q_results:
+            embedding_hits.append(r.payload["chunk_id"])
+        
+    # 3. Merge (Hybrid) - Simple deduplication
+    merged_hits = list(set(bm25_hits + embedding_hits))
+    
+    # Save debug info
+    debug_info = {
+        "query": query_str,
+        "tokenized_query": tokenized_query,
+        "bm25_hits": bm25_hits,
+        "embedding_hits": embedding_hits,
+        "merged_hits": merged_hits
+    }
+    
+    os.makedirs("retrieval_debug", exist_ok=True)
+    safe_query = "".join([c if c.isalnum() else "_" for c in query_str])
+    debug_path = f"retrieval_debug/search_{safe_query}.json"
+    
+    with open(debug_path, "w", encoding="utf-8") as f:
+        json.dump(debug_info, f, ensure_ascii=False, indent=2)
+        
+    print(f"Saved retrieval debug to {debug_path}")
+    print(f"BM25 hits: {len(bm25_hits)}")
+    print(f"Embedding hits: {len(embedding_hits)}")
+    print(f"Merged hits: {len(merged_hits)}")
+    
+    return merged_hits

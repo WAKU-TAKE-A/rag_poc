@@ -1,0 +1,7 @@
+docling
+whoosh
+qdrant-client
+openai
+pydantic
+python-dotenv
+janome
