@@ -22,6 +22,29 @@
 - **ベクトル検索 (Vector)**: [Qdrant](https://qdrant.tech/) (ローカルファイルモード) + OpenAI `text-embedding-3-small`
 - **回答生成 (Generation)**: OpenAI `gpt-4o-mini`
 
+## 処理の流れ（フロー図）
+
+```mermaid
+graph TD
+    subgraph sync_sub ["データ同期 (sync)"]
+        A["input/ フォルダ"] -->|検知| B["パース: Docling"]
+        B -->|Markdown| C["チャンク化: Heading基準"]
+        C -->|JSON| D["埋め込み (ベクトル化): OpenAI"]
+        D -->|ベクトル| E[(Qdrant)]
+        C -->|テキスト| F[(Whoosh)]
+    end
+
+    subgraph ask_sub ["質問・回答生成 (ask)"]
+        G["ユーザーの質問"] -->|クエリ| H["検索処理"]
+        H -->|キーワード検索| F
+        H -->|ベクトル化: OpenAI| E
+        F -->|ヒット| I["マージ・並び替え"]
+        E -->|ヒット| I
+        I -->|上位コンテキスト| J["回答生成: OpenAI (gpt-4o-mini)"]
+        J --> K["回答"]
+    end
+```
+
 ## ディレクトリ構成
 
 ```text
@@ -118,3 +141,23 @@ OPENAI_API_KEY=your_openai_api_key_here
 # AIの温度（ランダム性）を0.7に上げる
 .\.venv\Scripts\python.exe main.py config --llm-temperature 0.7
 ```
+
+---
+
+## セキュリティとエンタープライズ展開（本番化）について
+
+本PoC環境を実際の業務データや機密文書に適用する際の、セキュリティと本番化の展望について説明します。
+
+### 1. データのプライバシーについて（APIの規約）
+本プロジェクトで使用している **OpenAI API** は、無料版のChatGPT等とは異なり、**送信されたデータ（プロンプトやドキュメントの内容）をOpenAIがAIモデルの学習に使用することはありません。** デフォルトで高いプライバシーが確保されています。
+
+### 2. さらなる閉領域（セキュアな環境）での運用
+より厳格なセキュリティ要件（社外へのデータ送信の完全な禁止、専用線接続など）が求められる場合は、以下の構成への移行が可能です。
+
+- **Azure OpenAI Service への移行**:
+  - Microsoftのセキュアなクラウド環境内でOpenAIモデルを動かす方法です。多くの日本企業で「本番の閉領域RAG」として採用されています。
+  - 本システムのソースコードは、エンドポイント等の設定を少し変更するだけでAzure OpenAIに切り替え可能です。
+- **ローカルLLM / ローカルEmbedding への移行**:
+  - 外部APIを一切叩かず、自社サーバー内のGPU等で完全に完結させる構成です。
+  - 検索エンジン（Whoosh/Qdrant）はすでにローカルで動いているため、LLMやEmbedding部分を `SentenceTransformers` 等に置き換えることで実現可能です。
+
