@@ -10,6 +10,7 @@ from qdrant_client.models import Distance, VectorParams, PointStruct
 from openai import OpenAI
 from dotenv import load_dotenv
 from janome.tokenizer import Tokenizer
+from src.logger import logger
 
 load_dotenv()
 
@@ -17,9 +18,8 @@ def get_qdrant_client():
     return QdrantClient(path="./qdrant_data")
 
 def index_all_chunks():
-    print("Indexing all chunks for search...")
+    logger.info("Indexing all chunks for search...")
     
-    # Initialize Janome
     t = Tokenizer()
     
     # 1. Setup Whoosh
@@ -81,10 +81,10 @@ def index_all_chunks():
             points=points
         )
         
-    print(f"Indexed chunks into Whoosh and Qdrant.")
+    logger.info(f"Indexed chunks into Whoosh and Qdrant.")
 
 def search(query_str: str):
-    print(f"Searching for: '{query_str}'")
+    logger.info(f"Searching for: '{query_str}'")
     
     # Ensure index is fresh
     index_all_chunks()
@@ -92,7 +92,7 @@ def search(query_str: str):
     # Initialize Janome for query
     t = Tokenizer()
     tokenized_query = " ".join([token.surface for token in t.tokenize(query_str)])
-    print(f"Tokenized query for BM25: '{tokenized_query}'")
+    logger.info(f"Tokenized query for BM25: '{tokenized_query}'")
     
     # 1. BM25 Search (Whoosh)
     ix = open_dir("whoosh_index")
@@ -104,27 +104,31 @@ def search(query_str: str):
             bm25_hits.append(r["chunk_id"])
             
     # 2. Embedding Search (Qdrant)
+    embedding_hits = []
     if not os.environ.get("OPENAI_API_KEY"):
-        print("Warning: OPENAI_API_KEY not set. Skipping vector search.")
-        embedding_hits = []
+        logger.warning("OPENAI_API_KEY not set. Skipping vector search.")
     else:
-        client = OpenAI()
-        response = client.embeddings.create(
-            input=query_str,
-            model="text-embedding-3-small"
-        )
-        query_vector = response.data[0].embedding
-        
-        q_client = get_qdrant_client()
-        q_results = q_client.search(
-            collection_name="chunks",
-            query_vector=query_vector,
-            limit=5
-        )
-        
-        embedding_hits = []
-        for r in q_results:
-            embedding_hits.append(r.payload["chunk_id"])
+        try:
+            client = OpenAI()
+            response = client.embeddings.create(
+                input=query_str,
+                model="text-embedding-3-small"
+            )
+            query_vector = response.data[0].embedding
+            
+            q_client = get_qdrant_client()
+            # Use query_points instead of search for newer qdrant-client versions
+            q_results = q_client.query_points(
+                collection_name="chunks",
+                query=query_vector,
+                limit=5
+            ).points
+            
+            for r in q_results:
+                embedding_hits.append(r.payload["chunk_id"])
+        except Exception as e:
+            logger.warning(f"Vector search failed (maybe quota or API error): {e}")
+            logger.warning("Falling back to keyword search only.")
         
     # 3. Merge (Hybrid) - Simple deduplication
     merged_hits = list(set(bm25_hits + embedding_hits))
@@ -145,9 +149,9 @@ def search(query_str: str):
     with open(debug_path, "w", encoding="utf-8") as f:
         json.dump(debug_info, f, ensure_ascii=False, indent=2)
         
-    print(f"Saved retrieval debug to {debug_path}")
-    print(f"BM25 hits: {len(bm25_hits)}")
-    print(f"Embedding hits: {len(embedding_hits)}")
-    print(f"Merged hits: {len(merged_hits)}")
+    logger.info(f"Saved retrieval debug to {debug_path}")
+    logger.info(f"BM25 hits: {len(bm25_hits)}")
+    logger.info(f"Embedding hits: {len(embedding_hits)}")
+    logger.info(f"Merged hits: {len(merged_hits)}")
     
     return merged_hits

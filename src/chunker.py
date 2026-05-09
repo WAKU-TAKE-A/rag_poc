@@ -2,9 +2,10 @@ import json
 import os
 import re
 from src.models import ChunkMetadata
+from src.logger import logger
 
 def chunk_markdown(md_path: str, output_dir: str = "chunks", chunk_level: int = 2) -> str:
-    print(f"Chunking {md_path} at heading level {chunk_level}...")
+    logger.info(f"Chunking {md_path} at heading level {chunk_level}...")
     with open(md_path, "r", encoding="utf-8") as f:
         lines = f.readlines()
         
@@ -59,5 +60,5 @@ def chunk_markdown(md_path: str, output_dir: str = "chunks", chunk_level: int = 
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(chunks, f, ensure_ascii=False, indent=2)
         
-    print(f"Saved {len(chunks)} chunks to {output_path}")
+    logger.info(f"Saved {len(chunks)} chunks to {output_path}")
     return output_path
