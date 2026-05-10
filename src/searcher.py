@@ -12,6 +12,7 @@ from openai import OpenAI
 from dotenv import load_dotenv
 from janome.tokenizer import Tokenizer
 from src.logger import logger
+from concurrent.futures import ThreadPoolExecutor
 
 load_dotenv()
 
@@ -122,28 +123,37 @@ def search(query_str: str):
     tokenized_query = " ".join([token.surface for token in t.tokenize(query_str)])
     logger.info(f"Tokenized query for BM25: '{tokenized_query}'")
     
-    # 1. BM25 Search (Whoosh)
-    ix = open_dir("whoosh_index")
-    bm25_hits = []
-    with ix.searcher() as searcher:
-        query = QueryParser("text", ix.schema).parse(tokenized_query)
-        results = searcher.search(query, limit=search_limit)
-        for r in results:
-            bm25_hits.append(r["chunk_id"])
-            
-    # 2. Embedding Search (Qdrant)
-    embedding_hits = []
-    if not os.environ.get("OPENAI_API_KEY"):
-        logger.warning("OPENAI_API_KEY not set. Skipping vector search.")
-    else:
+    def run_bm25():
+        logger.info("Starting BM25 search...")
+        hits = []
+        try:
+            ix = open_dir("whoosh_index")
+            with ix.searcher() as searcher:
+                query = QueryParser("text", ix.schema).parse(tokenized_query)
+                results = searcher.search(query, limit=search_limit)
+                for r in results:
+                    hits.append(r["chunk_id"])
+        except Exception as e:
+            logger.error(f"BM25 search failed: {e}")
+        logger.info(f"BM25 search completed. Hits: {len(hits)}")
+        return hits
+
+    def run_vector():
+        logger.info("Starting Vector search...")
+        hits = []
+        if not os.environ.get("OPENAI_API_KEY"):
+            logger.warning("OPENAI_API_KEY not set. Skipping vector search.")
+            return hits
         try:
             client = OpenAI()
+            logger.info("Calling OpenAI for query embedding...")
             response = client.embeddings.create(
                 input=query_str,
                 model="text-embedding-3-small"
             )
             query_vector = response.data[0].embedding
             
+            logger.info("Querying Qdrant...")
             q_client = get_qdrant_client()
             q_results = q_client.query_points(
                 collection_name="chunks",
@@ -152,10 +162,20 @@ def search(query_str: str):
             ).points
             
             for r in q_results:
-                embedding_hits.append(r.payload["chunk_id"])
+                hits.append(r.payload["chunk_id"])
         except Exception as e:
             logger.warning(f"Vector search failed (maybe quota or API error): {e}")
             logger.warning("Falling back to keyword search only.")
+        logger.info(f"Vector search completed. Hits: {len(hits)}")
+        return hits
+
+    # Run searches in parallel
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        future_bm25 = executor.submit(run_bm25)
+        future_vector = executor.submit(run_vector)
+        
+        bm25_hits = future_bm25.result()
+        embedding_hits = future_vector.result()
         
     # 3. Merge (Hybrid) - Keep the original ranking order.
     merged_hits = []
