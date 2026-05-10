@@ -171,6 +171,26 @@ def sync_cmd(args):
             logger.info(f"Skipping unchanged file: {input_file}")
             continue
 
+        # Auto-split large PDFs if they exceed the split size
+        if input_file.lower().endswith(".pdf"):
+            try:
+                from pypdf import PdfReader
+                reader = PdfReader(input_file)
+                total_pages = len(reader.pages)
+                
+                pages_per_file = config.get("pdf_split_pages", 20)
+                
+                if total_pages > pages_per_file:
+                    logger.warning(f"{input_file} has {total_pages} pages, exceeding split size of {pages_per_file}. Auto-splitting...")
+                    from src.parser import split_pdf
+                    new_parts = split_pdf(input_file, pages_per_file=pages_per_file)
+                    # Add new parts to the list to be processed in the current loop
+                    current_input_files.extend([os.path.normpath(p) for p in new_parts])
+                    logger.info(f"Auto-split completed. Added {len(new_parts)} parts to processing queue. Skipping original file.")
+                    continue
+            except Exception as e:
+                logger.error(f"Error checking page count or splitting {input_file}: {e}")
+
         logger.info(f"Processing new or modified file: {input_file}")
         files_processed = True
         try:

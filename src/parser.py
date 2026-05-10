@@ -74,4 +74,12 @@ def split_pdf(input_path: str, pages_per_file: int = 20, output_dir: str = "inpu
         logger.info(f"Saved {output_path} (Pages {start+1} to {end})")
         output_files.append(output_path)
         
+    # Rename original file to avoid re-processing by sync
+    org_path = input_path + ".org"
+    try:
+        os.rename(input_path, org_path)
+        logger.info(f"Renamed original file {input_path} to {org_path}")
+    except Exception as e:
+        logger.warning(f"Failed to rename original file {input_path}: {e}")
+        
     return output_files

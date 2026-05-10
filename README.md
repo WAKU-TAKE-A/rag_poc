@@ -1,4 +1,4 @@
-# RAG PoC CLI (v0.9.3)
+# RAG PoC CLI (v0.9.4)
 
 本プロジェクトは、RAG (Retrieval Augmented Generation) の内部処理を可視化・説明可能にすることを目的とした、CLI（コマンドライン）ベースのPoC（概念実証）環境です。
 
@@ -90,9 +90,15 @@ OPENAI_API_KEY=your_openai_api_key_here
 
 ### 🌟 推奨：一括同期コマンド (`sync`)
 `input/` フォルダにドキュメントを配置し、以下のコマンドを実行するだけで、全自動で追加・変更されたファイルのみを処理し、検索可能な状態にします。
+※巨大なPDFが含まれる場合、ページ数に応じて自動的に分割（`split`）処理が走ります。
 
 ```bash
 .\.venv\Scripts\python.exe main.py sync
+```
+
+強制的に全数再処理（インデックス再構築）したい場合は、`--rebuild` フラグを使用します。
+```bash
+.\.venv\Scripts\python.exe main.py sync --rebuild
 ```
 
 ### 質問と回答生成 (`ask`)
@@ -108,10 +114,11 @@ OPENAI_API_KEY=your_openai_api_key_here
 トラブルシューティングや、特定のステップだけをやり直したい場合は、以下のコマンドを個別に実行できます。
 
 ### Step 1: PDFの分割 (`split`)
-巨大なPDFでメモリ不足になる場合、あらかじめ分割します。
+巨大なPDFでメモリ不足になる場合、あらかじめ分割します（`sync` 実行時に自動で行われるようになりましたが、手動での実行も可能です）。
 ```bash
-.\.venv\Scripts\python.exe main.py split input/sample.pdf --pages 5
+.\.venv\Scripts\python.exe main.py split input/sample.pdf --pages 20
 ```
+* 分割が完了すると、元のファイルは自動的に `sample.pdf.org` にリネームされ、`sync` の対象から外れます。
 
 ### Step 2: パース (`parse`)
 ```bash
