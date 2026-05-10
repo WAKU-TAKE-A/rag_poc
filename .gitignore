@@ -21,8 +21,11 @@ logs/*.log
 # State
 sync_state.json
 
-# Keep directories but ignore content
+# Input files (Ignore all except .gitkeep)
+input/*
 !input/.gitkeep
+
+# Keep directories but ignore content
 !parsed/.gitkeep
 !chunks/.gitkeep
 !retrieval_debug/.gitkeep
