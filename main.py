@@ -89,13 +89,13 @@ def embed_cmd(args):
         logger.info(f"Found {len(files)} JSON files to embed in directory: {args.file}")
         for f in files:
             try:
-                if embed_chunks(f):
+                if embed_chunks(f, force=args.force):
                     files_embedded = True
             except Exception as e:
                 logger.error(f"Error embedding {f}: {e}")
     else:
         try:
-            if embed_chunks(args.file):
+            if embed_chunks(args.file, force=args.force):
                 files_embedded = True
         except Exception as e:
             logger.error(f"Error embedding {args.file}: {e}")
@@ -117,9 +117,13 @@ def sync_cmd(args):
     current_config_hash = calculate_dict_hash(config)
     if tracker.get_config_hash() != current_config_hash:
         if tracker.get_config_hash() != "":
-            logger.warning("Configuration changed! Forcing full re-process.")
-            tracker.clear_state()
+            logger.info("Configuration changed (hash updated).")
         tracker.set_config_hash(current_config_hash)
+
+    # Force full re-process if --rebuild is specified
+    if args.rebuild:
+        logger.warning("Forcing full re-process as requested by --rebuild.")
+        tracker.clear_state()
 
     input_dir = "input"
     if not os.path.exists(input_dir):
@@ -242,6 +246,9 @@ def config_cmd(args):
     if args.search_limit is not None:
         config["search_limit"] = args.search_limit
         updated = True
+    if args.embed_workers is not None:
+        config["embed_workers"] = args.embed_workers
+        updated = True
         
     if updated:
         with open(config_path, "w", encoding="utf-8") as f:
@@ -293,7 +300,8 @@ def main():
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # sync cmd
-    subparsers.add_parser("sync", help="Automatically process new/modified/deleted files in input/")
+    sync_parser = subparsers.add_parser("sync", help="Automatically process new/modified/deleted files in input/")
+    sync_parser.add_argument("--rebuild", action="store_true", help="Force full re-process of all files")
 
     # parse cmd
     parse_parser = subparsers.add_parser("parse", help="Convert PDF/PPTX to Markdown (Supports file or directory)")
@@ -307,6 +315,7 @@ def main():
     # embed cmd
     embed_parser = subparsers.add_parser("embed", help="Embed chunks (Supports file or directory)")
     embed_parser.add_argument("file", help="Path to chunk JSON file or directory")
+    embed_parser.add_argument("--force", action="store_true", help="Force re-embedding of all chunks")
 
     # search cmd
     search_parser = subparsers.add_parser("search", help="Execute search")
@@ -324,6 +333,7 @@ def main():
     config_parser.add_argument("--llm-system-prompt", help="System prompt for answer generation")
     config_parser.add_argument("--llm-user-prompt", help="User prompt template for answer generation")
     config_parser.add_argument("--search-limit", type=positive_int, help="Number of chunks to retrieve for search")
+    config_parser.add_argument("--embed-workers", type=positive_int, help="Number of parallel workers for embedding")
 
     # split cmd
     split_parser = subparsers.add_parser("split", help="Split PDF into smaller files")

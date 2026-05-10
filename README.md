@@ -1,4 +1,4 @@
-# RAG PoC CLI (v0.9.2)
+# RAG PoC CLI (v0.9.3)
 
 本プロジェクトは、RAG (Retrieval Augmented Generation) の内部処理を可視化・説明可能にすることを目的とした、CLI（コマンドライン）ベースのPoC（概念実証）環境です。
 
