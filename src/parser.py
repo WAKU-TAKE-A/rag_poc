@@ -3,12 +3,12 @@ import json
 # Fix for Windows symlink error in huggingface_hub
 os.environ["HF_HUB_DISABLE_SYMLINKS"] = "1"
 
-from docling.document_converter import DocumentConverter
-from docling.datamodel.base_models import InputFormat
-from pypdf import PdfReader, PdfWriter
 from src.logger import logger
 
 def convert_to_markdown(input_path: str, output_dir: str = "parsed") -> str:
+    from docling.document_converter import DocumentConverter
+    from docling.datamodel.base_models import InputFormat
+    
     logger.info(f"Starting parsing of {input_path}...")
     
     # Load config for OCR
@@ -45,6 +45,8 @@ def convert_to_markdown(input_path: str, output_dir: str = "parsed") -> str:
     return output_path
 
 def split_pdf(input_path: str, pages_per_file: int = 20, output_dir: str = "input") -> list[str]:
+    from pypdf import PdfReader, PdfWriter
+    
     if pages_per_file <= 0:
         raise ValueError("pages_per_file must be greater than 0.")
 

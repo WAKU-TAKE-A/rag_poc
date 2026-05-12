@@ -6,6 +6,7 @@ import uuid
 from whoosh.index import create_in, open_dir
 from whoosh.fields import Schema, TEXT, ID
 from whoosh.qparser import QueryParser
+from whoosh.analysis import RegexTokenizer
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
 from openai import OpenAI
@@ -25,7 +26,7 @@ def index_all_chunks():
     t = Tokenizer()
     
     # 1. Setup Whoosh
-    schema = Schema(chunk_id=ID(stored=True), text=TEXT(stored=True))
+    schema = Schema(chunk_id=ID(stored=True), text=TEXT(stored=True, analyzer=RegexTokenizer(expression=r"\S+")))
     if os.path.exists("whoosh_index"):
         shutil.rmtree("whoosh_index")
     os.makedirs("whoosh_index", exist_ok=True)

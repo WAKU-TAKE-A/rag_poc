@@ -3,11 +3,7 @@ import sys
 import os
 import glob
 import json
-from src.parser import convert_to_markdown, split_pdf
-from src.chunker import chunk_markdown
-from src.embedder import embed_chunks
-from src.searcher import search, index_all_chunks
-from src.answerer import generate_answer
+# Imports from src are deferred to function level to allow running without heavy dependencies.
 from src.logger import logger
 from src.state import StateTracker, calculate_file_hash, calculate_dict_hash
 
@@ -24,6 +20,7 @@ def heading_level(value):
     return int_value
 
 def parse_cmd(args):
+    from src.parser import convert_to_markdown
     if os.path.isdir(args.file):
         patterns = ["*.pdf", "*.pptx", "*.md", "*.adoc"]
         files = []
@@ -47,6 +44,7 @@ def parse_cmd(args):
             logger.error(f"Error parsing {args.file}: {e}")
 
 def chunk_cmd(args):
+    from src.chunker import chunk_markdown
     chunk_level = 2
     config_path = "config.json"
     if os.path.exists(config_path):
@@ -78,6 +76,8 @@ def chunk_cmd(args):
             logger.error(f"Error chunking {args.file}: {e}")
 
 def embed_cmd(args):
+    from src.embedder import embed_chunks
+    from src.searcher import index_all_chunks
     files_embedded = False
 
     if os.path.isdir(args.file):
@@ -105,6 +105,11 @@ def embed_cmd(args):
         index_all_chunks()
 
 def sync_cmd(args):
+    from src.parser import convert_to_markdown, split_pdf
+    from src.chunker import chunk_markdown
+    from src.embedder import embed_chunks
+    from src.searcher import index_all_chunks
+    
     tracker = StateTracker()
 
     config_path = "config.json"
@@ -223,6 +228,7 @@ def sync_cmd(args):
     logger.info("Sync completed.")
 
 def search_cmd(args):
+    from src.searcher import search
     try:
         search(args.query)
     except Exception as e:
@@ -279,6 +285,7 @@ def config_cmd(args):
         logger.info(f"Current config: {config}")
 
 def split_cmd(args):
+    from src.parser import split_pdf
     config_path = "config.json"
     pages_per_file = 20
     if os.path.exists(config_path):
@@ -298,6 +305,8 @@ def split_cmd(args):
         logger.error(f"Error splitting PDF {args.file}: {e}")
 
 def ask_cmd(args):
+    from src.searcher import search
+    from src.answerer import generate_answer
     try:
         hit_ids = search(args.query)
         

@@ -1,4 +1,4 @@
-# RAG PoC CLI (v0.9.4)
+# RAG PoC CLI (v0.9.5)
 
 本プロジェクトは、RAG (Retrieval Augmented Generation) の内部処理を可視化・説明可能にすることを目的とした、CLI（コマンドライン）ベースのPoC（概念実証）環境です。
 
@@ -148,6 +148,20 @@ OPENAI_API_KEY=your_openai_api_key_here
 # AIの温度（ランダム性）を0.7に上げる
 .\.venv\Scripts\python.exe main.py config --llm-temperature 0.7
 ```
+## トラブルシューティング
+
+### 検索時に `WARNING: Chunk ID ... not found in loaded chunks` が出る場合
+この警告は、検索インデックス（WhooshやQdrant）には過去のデータ情報が残っているけれど、実際の `chunks/` フォルダにはそのファイルが存在しない場合に発生します（ファイルの削除や移動を行った際によく発生します）。
+
+回答自体は他の正常なファイルから生成されるため問題ありませんが、警告を消してインデックスを完全にクリーンにしたい場合は、以下の手順を実行してください。
+
+1. `whoosh_index/` フォルダを削除する。
+2. `qdrant_data/` フォルダを削除する。
+3. `chunks/` フォルダの中身を削除する。
+4. 再度、以下のコマンドで一から同期をやり直す。
+   ```bash
+   .\.venv\Scripts\python.exe main.py sync
+   ```
 
 ---
 
