@@ -1,4 +1,4 @@
-# RAG PoC CLI (v0.9.5)
+# RAG PoC CLI (v0.9.6)
 
 本プロジェクトは、RAG (Retrieval Augmented Generation) の内部処理を可視化・説明可能にすることを目的とした、CLI（コマンドライン）ベースのPoC（概念実証）環境です。
 
@@ -147,6 +147,9 @@ OPENAI_API_KEY=your_openai_api_key_here
 
 # AIの温度（ランダム性）を0.7に上げる
 .\.venv\Scripts\python.exe main.py config --llm-temperature 0.7
+
+# 1チャンクの最大文字数を1500文字に設定（0で無効）
+.\.venv\Scripts\python.exe main.py config --chunk-max-chars 1500
 ```
 ## トラブルシューティング
 

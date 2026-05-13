@@ -46,12 +46,14 @@ def parse_cmd(args):
 def chunk_cmd(args):
     from src.chunker import chunk_markdown
     chunk_level = 2
+    chunk_max_chars = 0
     config_path = "config.json"
     if os.path.exists(config_path):
         try:
             with open(config_path, "r", encoding="utf-8") as f:
                 config = json.load(f)
                 chunk_level = config.get("chunk_level", 2)
+                chunk_max_chars = config.get("chunk_max_chars", 0)
         except Exception:
             pass
     if args.level:
@@ -66,12 +68,12 @@ def chunk_cmd(args):
         logger.info(f"Found {len(files)} markdown files to chunk in directory: {args.file}")
         for f in files:
             try:
-                chunk_markdown(f, chunk_level=chunk_level)
+                chunk_markdown(f, chunk_level=chunk_level, chunk_max_chars=chunk_max_chars)
             except Exception as e:
                 logger.error(f"Error chunking {f}: {e}")
     else:
         try:
-            chunk_markdown(args.file, chunk_level=chunk_level)
+            chunk_markdown(args.file, chunk_level=chunk_level, chunk_max_chars=chunk_max_chars)
         except Exception as e:
             logger.error(f"Error chunking {args.file}: {e}")
 
@@ -129,6 +131,8 @@ def sync_cmd(args):
     if args.rebuild:
         logger.warning("Forcing full re-process as requested by --rebuild.")
         tracker.clear_state()
+    chunk_level = config.get("chunk_level", 2)
+    chunk_max_chars = config.get("chunk_max_chars", 0)
 
     input_dir = "input"
     if not os.path.exists(input_dir):
@@ -203,7 +207,7 @@ def sync_cmd(args):
             if not parsed_path:
                 continue
 
-            chunk_path = chunk_markdown(parsed_path, chunk_level=chunk_level)
+            chunk_path = chunk_markdown(parsed_path, chunk_level=chunk_level, chunk_max_chars=chunk_max_chars)
 
             embedded = False
             if chunk_path:
@@ -274,6 +278,9 @@ def config_cmd(args):
         updated = True
     if args.embed_workers is not None:
         config["embed_workers"] = args.embed_workers
+        updated = True
+    if args.chunk_max_chars is not None:
+        config["chunk_max_chars"] = args.chunk_max_chars
         updated = True
         
     if updated:
@@ -363,6 +370,7 @@ def main():
     config_parser.add_argument("--llm-user-prompt", help="User prompt template for answer generation")
     config_parser.add_argument("--search-limit", type=positive_int, help="Number of chunks to retrieve for search")
     config_parser.add_argument("--embed-workers", type=positive_int, help="Number of parallel workers for embedding")
+    config_parser.add_argument("--chunk-max-chars", type=positive_int, help="Max characters per chunk (0=disabled, recommended: 1000)")
 
     # split cmd
     split_parser = subparsers.add_parser("split", help="Split PDF into smaller files")
