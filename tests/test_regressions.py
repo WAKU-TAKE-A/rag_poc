@@ -46,6 +46,15 @@ class RagPocRegressionTests(unittest.TestCase):
         self.original_cwd = os.getcwd()
         os.chdir(self.temp_dir.name)
 
+        # Override project root for configuration
+        os.environ["RAG_POC_PROJECT_ROOT"] = self.temp_dir.name
+
+        # Override config and path related variables in loaded modules
+        from src import config, state
+        config.PROJECT_ROOT = self.temp_dir.name
+        config._config_cache = None
+        state.STATE_FILE = config.project_path("sync_state.json")
+
         for directory in ["input", "chunks", "parsed", "retrieval_debug"]:
             Path(directory).mkdir(parents=True, exist_ok=True)
 
@@ -66,16 +75,18 @@ class RagPocRegressionTests(unittest.TestCase):
     def tearDown(self):
         os.chdir(self.original_cwd)
         self.temp_dir.cleanup()
+        if "RAG_POC_PROJECT_ROOT" in os.environ:
+            del os.environ["RAG_POC_PROJECT_ROOT"]
 
     def test_sync_retries_when_embedding_failed_previously(self):
         Path("input/doc.md").write_text("# title\nbody\n", encoding="utf-8")
 
         args = type("Args", (), {})()
 
-        with patch("main.convert_to_markdown", return_value="parsed/doc.md"), \
-             patch("main.chunk_markdown", return_value="chunks/doc.json"), \
-             patch("main.embed_chunks", side_effect=[False, True]), \
-             patch("main.index_all_chunks"):
+        with patch("src.parser.convert_to_markdown", return_value="parsed/doc.md"), \
+             patch("src.chunker.chunk_markdown", return_value="chunks/doc.json"), \
+             patch("src.embedder.embed_chunks", side_effect=[False, True]), \
+             patch("src.searcher.index_all_chunks"):
             main.sync_cmd(args)
             state = json.loads(Path("sync_state.json").read_text(encoding="utf-8"))
             self.assertEqual(state["files"]["input\\doc.md"]["status"], "chunked")
@@ -169,7 +180,18 @@ class RagPocRegressionTests(unittest.TestCase):
             results = searcher.search("hello")
 
         ensure_indexes_ready.assert_called_once()
-        self.assertEqual(results, ["bm25-1", "shared", "bm25-3"])
+        self.assertEqual(results, ["shared", "bm25-1", "vector-2"])
+
+        # Verify debug output format and content
+        debug_file = Path("retrieval_debug/search_hello.json")
+        self.assertTrue(debug_file.exists())
+        debug_data = json.loads(debug_file.read_text(encoding="utf-8"))
+        self.assertIn("rrf_details", debug_data)
+
+        shared_details = debug_data["rrf_details"]["shared"]
+        self.assertAlmostEqual(shared_details["fused_score"], 1.0/62.0 + 1.0/61.0)
+        self.assertEqual(shared_details["ranks"]["bm25"], 2)
+        self.assertEqual(shared_details["ranks"]["vector"], 1)
 
     def test_cli_validators_reject_invalid_values(self):
         with self.assertRaises(SystemExit):
@@ -180,8 +202,159 @@ class RagPocRegressionTests(unittest.TestCase):
             with patch("sys.argv", ["main.py", "config", "--chunk-level", "7"]):
                 main.main()
 
+        with self.assertRaises(SystemExit):
+            with patch("sys.argv", ["main.py", "config", "--chunk-max-chars", "-1"]):
+                main.main()
+
+        # Should not raise SystemExit for 0
+        with patch("sys.argv", ["main.py", "config", "--chunk-max-chars", "0"]):
+            main.main()
+
         with self.assertRaises(ValueError):
             parser_module.split_pdf("input/a.pdf", pages_per_file=0)
+
+    def test_ask_dry_run_prints_prompt_without_calling_openai(self):
+        chunk_payload = [
+            {
+                "chunk_id": "doc.md-chunk-1",
+                "source_file": "doc.md",
+                "heading": "h1",
+                "heading_level": 1,
+                "section_path": ["h1"],
+                "text": "This is test context for dry-run.",
+            }
+        ]
+        Path("chunks/doc.json").write_text(
+            json.dumps(chunk_payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+        with patch("src.searcher.search", return_value=["doc.md-chunk-1"]) as mock_search, \
+             patch("src.answerer.OpenAI") as mock_openai_cls:
+
+            from io import StringIO
+            stdout_capture = StringIO()
+
+            with patch("sys.stdout", new=stdout_capture):
+                with patch("sys.argv", ["main.py", "ask", "test query?", "--dry-run"]):
+                    main.main()
+
+            output = stdout_capture.getvalue()
+
+            mock_search.assert_called_once_with("test query?")
+            mock_openai_cls.assert_not_called()
+
+            self.assertNotIn("===", output)
+            self.assertIn("This is test context for dry-run.", output)
+            self.assertIn("test query?", output)
+
+    def test_sync_state_absolute_paths_compatibility(self):
+        from src.state import StateTracker
+        from src.config import PROJECT_ROOT
+
+        legacy_state = {
+            "config_hash": "dummy_config_hash",
+            "files": {
+                os.path.join(PROJECT_ROOT, "input", "legacy_doc.md"): {
+                    "hash": "legacy_hash",
+                    "parsed_file": os.path.join(PROJECT_ROOT, "parsed", "legacy_doc.md"),
+                    "chunk_file": os.path.join(PROJECT_ROOT, "chunks", "legacy_doc.json"),
+                    "status": "embedded"
+                }
+            }
+        }
+
+        Path("sync_state.json").write_text(
+            json.dumps(legacy_state, ensure_ascii=False, indent=2),
+            encoding="utf-8"
+        )
+
+        tracker = StateTracker()
+
+        expected_key = os.path.normpath("input/legacy_doc.md")
+        expected_parsed = os.path.normpath("parsed/legacy_doc.md")
+        expected_chunk = os.path.normpath("chunks/legacy_doc.json")
+
+        record = tracker.get_file_record(expected_key)
+        self.assertEqual(record.get("hash"), "legacy_hash")
+        self.assertEqual(record.get("parsed_file"), expected_parsed)
+        self.assertEqual(record.get("chunk_file"), expected_chunk)
+        self.assertEqual(record.get("status"), "embedded")
+
+        disk_state = json.loads(Path("sync_state.json").read_text(encoding="utf-8"))
+        self.assertIn(expected_key, disk_state["files"])
+        self.assertNotIn(os.path.join(PROJECT_ROOT, "input", "legacy_doc.md"), disk_state["files"])
+        self.assertEqual(disk_state["files"][expected_key]["parsed_file"], expected_parsed)
+        self.assertEqual(disk_state["files"][expected_key]["chunk_file"], expected_chunk)
+
+    def test_sync_warns_on_critical_config_change_without_rebuild(self):
+        state_data = {
+            "config_hash": "old_hash",
+            "files": {},
+            "config": {
+                "chunk_level": 2,
+                "chunk_max_chars": 1000,
+                "do_ocr": False,
+                "pdf_split_pages": 20
+            }
+        }
+        Path("sync_state.json").write_text(
+            json.dumps(state_data, ensure_ascii=False, indent=2),
+            encoding="utf-8"
+        )
+
+        Path("config.json").write_text(
+            json.dumps(
+                {
+                    "chunk_level": 3,
+                    "chunk_max_chars": 1000,
+                    "do_ocr": False,
+                    "pdf_split_pages": 20
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        args = type("Args", (), {"rebuild": False})()
+
+        with patch("src.logger.logger.warning") as mock_warn, \
+             patch("src.parser.convert_to_markdown"), \
+             patch("src.chunker.chunk_markdown"), \
+             patch("src.embedder.embed_chunks"), \
+             patch("src.searcher.index_all_chunks"):
+            main.sync_cmd(args)
+
+            mock_warn.assert_any_call(
+                "Configuration affecting chunks/parsing has changed (e.g. chunk_level, chunk_max_chars, do_ocr, or pdf_split_pages). "
+                "If you want to regenerate existing files and rebuild the index, please run: sync --rebuild"
+            )
+
+    def test_format_prompt_missing_placeholders(self):
+        from src.answerer import format_prompt
+
+        template_no_context = "Hello {query}"
+        with patch("src.logger.logger.warning") as mock_warn:
+            res = format_prompt(template_no_context, "mycontext", "myquery")
+            self.assertEqual(res, "Hello myquery")
+            mock_warn.assert_called_once_with("Prompt template is missing '{context}' placeholder.")
+
+        template_no_query = "Hello {context}"
+        with patch("src.logger.logger.warning") as mock_warn:
+            res = format_prompt(template_no_query, "mycontext", "myquery")
+            self.assertEqual(res, "Hello mycontext")
+            mock_warn.assert_called_once_with("Prompt template is missing '{query}' placeholder.")
+
+    def test_format_prompt_single_pass_no_recursion(self):
+        from src.answerer import format_prompt
+
+        template = "C={context}; Q={query}"
+        context_val = "literal {query}"
+        query_val = "real question"
+
+        res = format_prompt(template, context_val, query_val)
+        self.assertEqual(res, "C=literal {query}; Q=real question")
 
 
 if __name__ == "__main__":

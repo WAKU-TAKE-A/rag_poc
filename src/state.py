@@ -2,8 +2,9 @@ import os
 import json
 import hashlib
 from src.logger import logger
+from src.config import project_path
 
-STATE_FILE = "sync_state.json"
+STATE_FILE = project_path("sync_state.json")
 
 def calculate_file_hash(filepath: str) -> str:
     """Calculate MD5 hash of a file."""
@@ -36,7 +37,33 @@ class StateTracker:
         if os.path.exists(STATE_FILE):
             try:
                 with open(STATE_FILE, "r", encoding="utf-8") as f:
-                    self.state = json.load(f)
+                    raw_state = json.load(f)
+
+                from src.config import PROJECT_ROOT
+
+                migrated_files = {}
+                for key, record in raw_state.get("files", {}).items():
+                    rel_key = os.path.relpath(key, PROJECT_ROOT) if os.path.isabs(key) else key
+                    rel_key = os.path.normpath(rel_key)
+
+                    migrated_record = record.copy()
+                    for path_field in ["parsed_file", "chunk_file"]:
+                        val = record.get(path_field)
+                        if val and os.path.isabs(val):
+                            rel_val = os.path.relpath(val, PROJECT_ROOT)
+                            migrated_record[path_field] = os.path.normpath(rel_val)
+
+                    migrated_files[rel_key] = migrated_record
+
+                self.state = {
+                    "config_hash": raw_state.get("config_hash", ""),
+                    "files": migrated_files,
+                    "config": raw_state.get("config", {})
+                }
+
+                if raw_state.get("files", {}) != migrated_files:
+                    logger.info("Migrated sync_state.json to project-relative paths.")
+                    self.save_state()
             except Exception as e:
                 logger.error(f"Error loading state file: {e}")
 

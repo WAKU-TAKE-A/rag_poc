@@ -3,6 +3,7 @@ import os
 import re
 from src.models import ChunkMetadata
 from src.logger import logger
+from src.config import project_path
 
 def _split_text_by_chars(text: str, max_chars: int) -> list[str]:
     """長すぎるテキストを句点（。）や改行で分割する最終フォールバック。"""
@@ -94,6 +95,7 @@ def chunk_markdown(md_path: str, output_dir: str = "chunks", chunk_level: int = 
     if chunk_max_chars > 0:
         logger.info(f"Adaptive split enabled: max {chunk_max_chars} chars per chunk (heading cascade ### -> #### -> ##### -> char split).")
 
+    abs_output_dir = project_path(output_dir) if not os.path.isabs(output_dir) else output_dir
     with open(md_path, "r", encoding="utf-8") as f:
         lines = f.readlines()
         
@@ -154,9 +156,9 @@ def chunk_markdown(md_path: str, output_dir: str = "chunks", chunk_level: int = 
             
     save_chunk()
     
-    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(abs_output_dir, exist_ok=True)
     name, _ = os.path.splitext(filename)
-    output_path = os.path.join(output_dir, f"{name}.json")
+    output_path = os.path.join(abs_output_dir, f"{name}.json")
     
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(chunks, f, ensure_ascii=False, indent=2)

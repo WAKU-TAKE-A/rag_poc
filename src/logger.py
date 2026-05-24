@@ -1,24 +1,19 @@
 import os
-import json
 import logging
 from logging.handlers import RotatingFileHandler
+from src.config import load_config, project_path
 
 def setup_logger():
-    config_path = "config.json"
     max_bytes = 1048576 # 1MB default
     backup_count = 10
     
-    if os.path.exists(config_path):
-        try:
-            with open(config_path, "r") as f:
-                config = json.load(f)
-                max_bytes = config.get("log_max_bytes", max_bytes)
-                backup_count = config.get("log_backup_count", backup_count)
-        except Exception:
-            pass
+    config = load_config()
+    max_bytes = config.get("log_max_bytes", max_bytes)
+    backup_count = config.get("log_backup_count", backup_count)
             
-    os.makedirs("logs", exist_ok=True)
-    log_file = "logs/app.log"
+    logs_dir = project_path("logs")
+    os.makedirs(logs_dir, exist_ok=True)
+    log_file = os.path.join(logs_dir, "app.log")
     
     logger = logging.getLogger("rag_poc")
     logger.setLevel(logging.INFO)
