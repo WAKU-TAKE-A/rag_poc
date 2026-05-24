@@ -30,3 +30,6 @@ input/*
 !chunks/.gitkeep
 !retrieval_debug/.gitkeep
 !logs/.gitkeep
+
+# Local planning/workflow documents
+plan/
